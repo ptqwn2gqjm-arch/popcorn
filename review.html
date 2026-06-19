@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>影評 — 爆米花 Popcorn</title>
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="爆米花 Popcorn">
+  <meta id="og-title" property="og:title" content="爆米花 Popcorn">
+  <meta id="og-desc" property="og:description" content="">
+  <meta id="og-image" property="og:image" content="">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=2">
+  <!-- Schema Markup 由 JS 動態注入 -->
+</head>
+<body>
+
+  <nav>
+    <div class="nav-inner">
+      <a class="nav-logo" href="index.html">爆米花 Popcorn</a>
+      <div class="nav-right">
+        <ul class="nav-links">
+          <li><a href="reviews.html">電影</a></li>
+          <li><a href="reviews.html?type=series">影集</a></li>
+          <li><a href="books.html">書本</a></li>
+          <li><a href="playlists.html">主題片單</a></li>
+        </ul>
+        <div class="nav-search-wrap">
+          <button class="nav-search-btn" onclick="this.closest('.nav-search-wrap').classList.toggle('open')" aria-label="搜尋">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </button>
+          <input class="nav-search-input" type="search" placeholder="搜尋影片名稱…" onkeydown="if(event.key==='Enter'&&this.value)location.href='reviews.html?q='+encodeURIComponent(this.value)">
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <div id="read-progress"></div>
+
+  <div id="article-root">
+    <div class="container">
+      <div class="loading" style="padding:120px 0;">載入中…</div>
+    </div>
+  </div>
+
+  <footer>
+    <p id="footer-copy">爆米花 Popcorn &copy; <span id="year"></span></p>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="utils.js?v=3"></script>
+  <script src="shared.js"></script>
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    function formatDateLong(str) {
+      const d = new Date(str);
+      return `${d.getFullYear()} 年 ${d.getMonth()+1} 月 ${d.getDate()} 日`;
+    }
+
+    function injectSchema(data) {
+      const schema = {
+        "@context": "https://schema.org",
+        "@type": "Review",
+        "name": data.title + " 影評",
+        "reviewBody": data.excerpt || data.content.slice(0, 200),
+        "reviewRating": {
+          "@type": "Rating",
+          "ratingValue": data.rating,
+          "bestRating": 10,
+          "worstRating": 1
+        },
+        "itemReviewed": {
+          "@type": "Movie",
+          "name": data.title,
+          "dateCreated": data.movie_year ? String(data.movie_year) : undefined,
+          "director": data.director ? { "@type": "Person", "name": data.director } : undefined
+        },
+        "author": { "@type": "Person", "name": "爆米花 Popcorn" },
+        "datePublished": data.published_at
+      };
+      const s = document.createElement('script');
+      s.type = 'application/ld+json';
+      s.textContent = JSON.stringify(schema);
+      document.head.appendChild(s);
+    }
+
+    async function loadArticle() {
+      const id = new URLSearchParams(location.search).get('id');
+      if (!id) {
+        document.getElementById('article-root').innerHTML =
+          '<div class="container"><div class="empty-state">找不到文章</div></div>';
+        return;
+      }
+
+      const { data, error } = await db
+        .from('articles').select('*').eq('id', id).single();
+
+      if (error || !data) {
+        document.getElementById('article-root').innerHTML =
+          '<div class="container"><div class="empty-state">文章不存在或已被刪除</div></div>';
+        return;
+      }
+
+      document.title = `${data.title} — 爆米花 Popcorn`;
+      document.getElementById('og-title').content = `${data.title} — 爆米花 Popcorn`;
+      document.getElementById('og-desc').content = data.excerpt || '';
+      if (data.cover_image) document.getElementById('og-image').content = data.cover_image;
+      injectSchema(data);
+
+      const tagsHTML = (data.tags || []).map(t => `<span class="tag-pill">${t}</span>`).join('');
+      const hasSubScores = data.score_plot || data.score_visual || data.score_music;
+      const subLabels = data.content_type === 'book'
+        ? ['文筆', '結構', '思想']
+        : data.content_type === 'series'
+        ? ['劇情', '製作', '配樂']
+        : ['劇情', '畫面', '音樂'];
+
+      document.getElementById('article-root').innerHTML = `
+        <div class="article-header-wrap">
+          <div class="article-header">
+            <a href="javascript:history.back()" class="back-link">← 返回列表</a>
+            <div class="article-kicker-row">
+              ${data.genre ? `<span class="kicker">${data.genre}</span>` : ''}
+              ${spoilerBadge(data.has_spoiler)}
+            </div>
+            <h1>${data.title}</h1>
+            <div class="article-meta">
+              ${data.movie_year ? `<span>${data.movie_year}</span>` : ''}
+              ${data.director    ? `<span>導演：${data.director}</span>` : ''}
+              <span>${formatDateLong(data.published_at)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="inline-score-wrap">
+          <div class="inline-score">
+            <div class="inline-score-main">
+              <span class="inline-score-num">${data.rating}</span>
+              <span class="inline-score-denom">/ 10</span>
+            </div>
+            ${hasSubScores ? `
+            <div class="inline-score-bars">
+              ${subScoreRow(subLabels[0], data.score_plot)}
+              ${subScoreRow(subLabels[1], data.score_visual)}
+              ${subScoreRow(subLabels[2], data.score_music)}
+            </div>` : ''}
+            <div class="inline-score-meta">
+              ${data.genre ? `<span>${data.genre}</span>` : ''}
+              ${data.director ? `<span>${data.director}</span>` : ''}
+              <span>${data.has_spoiler ? '⚠ 有雷' : '✓ 無雷'}</span>
+              ${tagsHTML ? `<span>${tagsHTML}</span>` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div class="article-single">
+          <div class="article-content">
+            ${data.has_spoiler ? `
+              <div class="spoiler-warning">
+                <strong>⚠ 本文含有劇透</strong>
+                <p>以下影評包含劇情細節，建議觀影後再閱讀。</p>
+              </div>` : ''}
+            ${contentToHTML(data.content)}
+            ${youtubeEmbed(data.youtube_url)}
+            <div class="share-bar">
+              <span class="share-label">分享這篇</span>
+              <button class="share-btn share-copy" onclick="navigator.clipboard.writeText(location.href).then(()=>{this.textContent='✓ 已複製';setTimeout(()=>{this.textContent='複製連結'},2000)})">複製連結</button>
+            </div>
+          </div>
+        </div>`;
+
+      loadRelated(data.id);
+    }
+
+    async function loadRelated(currentId) {
+      const { data, error } = await db
+        .from('articles')
+        .select('id, title, cover_image, excerpt, genre, published_at')
+        .eq('is_published', true)
+        .neq('id', currentId)
+        .order('published_at', { ascending: false })
+        .limit(8);
+
+      if (error || !data || !data.length) return;
+
+      const idx = data.findIndex(a => a.id === currentId);
+      const prev = data[0];
+      const next = data[1] || null;
+
+      const navCard = (a, dir) => `
+        <a href="review.html?id=${a.id}" class="prev-next-card">
+          <div class="prev-next-img">
+            ${a.cover_image
+              ? `<img src="${a.cover_image}" alt="${a.title}" loading="lazy" onerror="this.style.display='none';this.parentElement.style.background='var(--border)'">`
+              : '<div class="prev-next-placeholder"></div>'}
+          </div>
+          <div class="prev-next-info">
+            <span class="prev-next-dir">${dir}</span>
+            <p class="prev-next-title">${a.title}</p>
+            ${a.genre ? `<span class="prev-next-genre">${a.genre}</span>` : ''}
+          </div>
+        </a>`;
+
+      const section = document.createElement('div');
+      section.className = 'prev-next-section';
+      section.innerHTML = `
+        <div class="prev-next-grid">
+          ${navCard(prev, '← 上一篇')}
+          ${next ? navCard(next, '下一篇 →') : '<div></div>'}
+        </div>`;
+      document.getElementById('article-root').after(section);
+    }
+
+    loadArticle();
+
+    // 閱讀進度條
+    window.addEventListener('scroll', () => {
+      const doc = document.documentElement;
+      const scrolled = doc.scrollTop;
+      const total = doc.scrollHeight - doc.clientHeight;
+      document.getElementById('read-progress').style.width = (scrolled / total * 100) + '%';
+    });
+
+    let clickCount = 0, clickTimer;
+    document.getElementById('footer-copy').addEventListener('click', () => {
+      clickCount++;
+      clearTimeout(clickTimer);
+      if (clickCount >= 3) { clickCount = 0; location.href = 'admin.html'; return; }
+      clickTimer = setTimeout(() => { clickCount = 0; }, 600);
+    });
+  </script>
+</body>
+</html>
