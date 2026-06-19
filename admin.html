@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>後台管理 — 爆米花 Popcorn</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .msg { padding:12px 16px; border-radius:4px; font-size:0.9rem; margin-bottom:24px; display:none; }
+    .msg.success { background:#e8f8ed; color:#1a7a3a; border:1px solid #a3d9b1; display:block; }
+    .msg.error   { background:#fdecea; color:#b71c1c; border:1px solid #f5a8a8; display:block; }
+
+    /* sub-score picker */
+    .sub-score-picker { display:flex; align-items:center; gap:8px; }
+    .sub-score-picker input[type=range] { flex:1; accent-color: var(--red); }
+    .sub-score-picker .val { font-size:0.9rem; color:var(--gray-dark); min-width:24px; text-align:right; }
+    .preview-tab { background:#f0f0f0; border:1px solid #ddd; padding:4px 14px; font-size:0.82rem; cursor:pointer; }
+    .preview-tab:first-child { border-radius:4px 0 0 4px; }
+    .preview-tab:last-child  { border-radius:0 4px 4px 0; border-left:none; }
+    .preview-tab.active { background:#222; color:#fff; border-color:#222; }
+
+    /* cover upload */
+    .cover-preview {
+      width:100%; aspect-ratio:16/9;
+      background:#f0f0f0 center/cover no-repeat;
+      border:1px solid #ddd; border-radius:4px;
+      position:relative; overflow:hidden;
+      cursor:default; margin-bottom:8px;
+    }
+    .cover-preview.has-image { cursor:crosshair; }
+    .cover-placeholder {
+      position:absolute; inset:0;
+      display:flex; align-items:center; justify-content:center;
+      color:#aaa; font-size:0.85rem; pointer-events:none;
+    }
+    .focal-dot {
+      display:none; position:absolute;
+      width:22px; height:22px; border-radius:50%;
+      border:2.5px solid #fff;
+      background:rgba(255,255,255,.25);
+      box-shadow:0 0 0 1.5px rgba(0,0,0,.55);
+      transform:translate(-50%,-50%);
+      pointer-events:none; transition:left .1s,top .1s;
+    }
+    .cover-hint {
+      font-size:0.75rem; color:#aaa; margin-top:4px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── LOGIN ── -->
+<div class="login-page" id="login-page">
+  <div class="login-box">
+    <h1>爆米花後台</h1>
+    <p>請輸入你的帳號與密碼</p>
+    <div class="msg" id="login-msg"></div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="your@email.com">
+    </div>
+    <div class="form-group">
+      <label>密碼</label>
+      <input type="password" id="login-password" placeholder="••••••••">
+    </div>
+    <button class="btn btn-fill" style="width:100%;" onclick="doLogin()">登入</button>
+  </div>
+</div>
+
+<!-- ── ADMIN ── -->
+<div class="admin-layout" id="admin-page" style="display:none;">
+  <header class="admin-topbar">
+    <span class="admin-topbar-logo">爆米花後台</span>
+    <div class="admin-topbar-right">
+      <nav class="admin-topbar-nav">
+        <span class="admin-topbar-btn active" onclick="showSection('list')">所有文章</span>
+        <span class="admin-topbar-btn" onclick="newArticle('movie')">＋ 電影</span>
+        <span class="admin-topbar-btn" onclick="newArticle('series')">＋ 影集</span>
+        <span class="admin-topbar-btn" onclick="newArticle('book')">＋ 書本</span>
+        <a class="admin-topbar-btn" href="index.html" target="_blank">↗ 前台</a>
+      </nav>
+      <div class="admin-avatar-wrap" id="avatar-wrap">
+        <button class="admin-avatar" onclick="toggleLogoutMenu()" aria-label="帳號選單">✦</button>
+        <div class="admin-logout-menu" id="logout-menu">
+          <button onclick="doLogout()">登出</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="admin-main">
+
+    <!-- 文章列表 -->
+    <div id="section-list">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+        <h2 style="margin-bottom:0;">所有文章</h2>
+        <input type="search" id="list-search" placeholder="搜尋標題…"
+          style="border:1px solid #ddd;border-radius:4px;padding:6px 12px;font-size:0.85rem;width:200px;outline:none;"
+          oninput="renderList(allListData)">
+      </div>
+      <div style="display:flex;gap:0;margin-bottom:20px;flex-wrap:wrap;">
+        <button type="button" class="preview-tab active" id="tab-all"      onclick="setListTab('all')">全部</button>
+        <button type="button" class="preview-tab"        id="tab-movie"    onclick="setListTab('movie')">電影</button>
+        <button type="button" class="preview-tab"        id="tab-series"   onclick="setListTab('series')">影集</button>
+        <button type="button" class="preview-tab"        id="tab-book"     onclick="setListTab('book')">書本</button>
+        <button type="button" class="preview-tab"        id="tab-published" onclick="setListTab('published')" style="margin-left:12px;">已發佈</button>
+        <button type="button" class="preview-tab"        id="tab-draft"    onclick="setListTab('draft')">草稿</button>
+      </div>
+      <div class="msg" id="list-msg"></div>
+      <div id="list-content"><div class="loading">載入中…</div></div>
+    </div>
+
+    <!-- 撰寫 / 編輯 -->
+    <div id="section-new" style="display:none;">
+      <h2 id="form-title">撰寫新影評</h2>
+      <div class="msg" id="form-msg"></div>
+      <input type="hidden" id="edit-id">
+
+      <div class="form-group">
+        <label>內容類型</label>
+        <select id="f-content-type" onchange="updateFormForType()">
+          <option value="movie">🎬 電影</option>
+          <option value="series">📺 影集</option>
+          <option value="book">📖 書本</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label id="label-title">標題 *</label>
+          <input type="text" id="f-title" placeholder="電影中文片名">
+        </div>
+        <div class="form-group">
+          <label id="label-year">上映年份</label>
+          <input type="number" id="f-year" placeholder="2024" min="1900" max="2099">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label id="label-director">導演</label>
+          <input type="text" id="f-director" placeholder="導演姓名">
+        </div>
+        <div class="form-group">
+          <label>類型</label>
+          <select id="f-genre">
+            <option value="">— 請選擇 —</option>
+            <option>劇情</option><option>科幻</option><option>動作</option>
+            <option>恐怖</option><option>喜劇</option><option>動畫</option>
+            <option>紀錄片</option><option>愛情</option><option>懸疑</option><option>奇幻</option>
+            <option>小說</option><option>散文</option><option>非虛構</option>
+            <option>詩集</option><option>漫畫</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>自訂標籤（用逗號分隔）</label>
+        <input type="text" id="f-tags" placeholder="台灣電影, 金馬獎, 家庭">
+      </div>
+
+      <!-- 防雷 -->
+      <div class="form-group">
+        <label>防雷設定</label>
+        <select id="f-spoiler">
+          <option value="false">✓ 無雷 — 不包含劇情細節</option>
+          <option value="true">⚠ 有雷 — 包含劇透</option>
+        </select>
+      </div>
+
+      <!-- 綜合評分 -->
+      <div class="form-group">
+        <label>綜合評分（1–5 星）</label>
+        <div class="star-picker" id="star-picker">
+          <input type="radio" name="rating" id="r1" value="1"><label for="r1">★</label>
+          <input type="radio" name="rating" id="r2" value="2"><label for="r2">★</label>
+          <input type="radio" name="rating" id="r3" value="3"><label for="r3">★</label>
+          <input type="radio" name="rating" id="r4" value="4"><label for="r4">★</label>
+          <input type="radio" name="rating" id="r5" value="5"><label for="r5">★</label>
+        </div>
+      </div>
+
+      <!-- 子評分 -->
+      <div class="form-row">
+        <div class="form-group">
+          <label id="label-plot">劇情評分（選填）</label>
+          <div class="sub-score-picker">
+            <input type="range" id="f-plot" min="0" max="5" step="1" value="0" oninput="document.getElementById('plot-val').textContent=this.value||'—'">
+            <span class="val" id="plot-val">—</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label id="label-visual">畫面評分（選填）</label>
+          <div class="sub-score-picker">
+            <input type="range" id="f-visual" min="0" max="5" step="1" value="0" oninput="document.getElementById('visual-val').textContent=this.value||'—'">
+            <span class="val" id="visual-val">—</span>
+          </div>
+        </div>
+      </div>
+      <div class="form-group" style="max-width:48%;">
+        <label id="label-music">音樂評分（選填）</label>
+        <div class="sub-score-picker">
+          <input type="range" id="f-music" min="0" max="5" step="1" value="0" oninput="document.getElementById('music-val').textContent=this.value||'—'">
+          <span class="val" id="music-val">—</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>YouTube 預告連結（選填）</label>
+        <input type="url" id="f-youtube" placeholder="https://www.youtube.com/watch?v=xxxxx">
+      </div>
+
+      <div class="form-group">
+        <label>封面圖片</label>
+        <div class="cover-preview" id="cover-preview">
+          <span class="cover-placeholder">尚未上傳封面</span>
+          <div class="focal-dot" id="focal-dot"></div>
+        </div>
+        <p class="cover-hint" id="cover-hint" style="display:none;">點擊圖片設定焦點（Hero 與卡片裁切的中心點）</p>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <label class="btn" style="cursor:pointer;padding:6px 16px;font-size:0.82rem;">
+            上傳封面
+            <input type="file" id="f-cover-file" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="handleCoverUpload(this)">
+          </label>
+          <span id="cover-upload-status" style="font-size:0.8rem;color:var(--gray);"></span>
+        </div>
+        <input type="hidden" id="f-cover">
+        <input type="hidden" id="f-cover-position" value="center center">
+        <label style="margin-top:4px;display:block;">Hero 遮罩深淺</label>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="range" id="f-overlay" min="30" max="92" step="2" value="82"
+            style="flex:1;accent-color:var(--red);"
+            oninput="document.getElementById('overlay-val').textContent=this.value+'%'">
+          <span id="overlay-val" style="font-size:0.85rem;color:var(--gray);min-width:36px;">82%</span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>摘要（約 80 字，顯示於列表卡片）</label>
+        <textarea id="f-excerpt" rows="3" placeholder="一段簡短的影評摘要…"></textarea>
+      </div>
+
+      <div class="form-group">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <label>內文 *</label>
+          <div style="display:flex;gap:0;">
+            <button type="button" id="tab-write" class="preview-tab active" onclick="switchTab('write')">撰寫</button>
+            <button type="button" id="tab-preview" class="preview-tab" onclick="switchTab('preview')">預覽</button>
+          </div>
+        </div>
+        <!-- 工具列 -->
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;">
+          <button type="button" class="preview-tab" onclick="insertSnippet('bold')"    title="粗體"><strong>B</strong></button>
+          <button type="button" class="preview-tab" onclick="insertSnippet('italic')"  title="斜體"><em>I</em></button>
+          <button type="button" class="preview-tab" onclick="insertSnippet('quote')"   title="引言">❝ 引言</button>
+          <button type="button" class="preview-tab" onclick="insertSnippet('img')"     title="插入圖片網址">🖼 圖片網址</button>
+          <button type="button" class="preview-tab" onclick="insertSnippet('imgwide')" title="插入寬圖（突破欄寬）" style="color:var(--red);">⬛ 寬圖網址</button>
+          <button type="button" class="preview-tab" onclick="triggerContentUpload()" title="上傳圖片並插入寬圖" style="color:var(--red);font-weight:600;">📤 上傳寬圖</button>
+          <input type="file" id="content-img-file" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="handleContentUpload(this)">
+        </div>
+        <textarea id="f-content" placeholder="開始撰寫……&#10;&#10;段落之間空一行即可。&#10;>> 引言  |  !![說明](網址) 寬圖  |  **粗體**  *斜體*" oninput="if(document.getElementById('tab-preview').classList.contains('active'))renderPreview()"></textarea>
+        <div id="content-preview" style="display:none;min-height:200px;padding:16px;border:1px solid #ddd;border-radius:4px;font-size:1rem;line-height:1.9;color:#333;background:#fafafa;"></div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>發佈狀態</label>
+          <select id="f-status" onchange="toggleSchedule()">
+            <option value="true">立即發佈</option>
+            <option value="false">儲存為草稿</option>
+            <option value="scheduled">預約發佈</option>
+          </select>
+        </div>
+        <div class="form-group" id="schedule-group" style="display:none;">
+          <label>預約時間</label>
+          <input type="datetime-local" id="f-scheduled-at">
+        </div>
+      </div>
+
+      <div style="display:flex;gap:16px;margin-top:8px;">
+        <button class="btn btn-red" onclick="saveArticle()">儲存</button>
+        <button class="btn" onclick="showSection('list')">取消</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<script src="utils.js"></script>
+<script>
+  // ── Auth ──
+  async function checkSession() {
+    const { data: { session } } = await db.auth.getSession();
+    if (session) showAdmin();
+  }
+
+  async function doLogin() {
+    const email = document.getElementById('login-email').value.trim();
+    const pass  = document.getElementById('login-password').value;
+    const msg   = document.getElementById('login-msg');
+    msg.className = 'msg';
+    const { error } = await db.auth.signInWithPassword({ email, password: pass });
+    if (error) { msg.textContent = '登入失敗：' + error.message; msg.className = 'msg error'; }
+    else showAdmin();
+  }
+
+  async function doLogout() {
+    await db.auth.signOut();
+    document.getElementById('admin-page').style.display = 'none';
+    document.getElementById('login-page').style.display = 'flex';
+  }
+
+  function showAdmin() {
+    document.getElementById('login-page').style.display = 'none';
+    document.getElementById('admin-page').style.display = 'grid';
+    loadList();
+  }
+
+  // ── Navigation ──
+  function showSection(name) {
+    document.getElementById('section-list').style.display = name === 'list' ? 'block' : 'none';
+    document.getElementById('section-new').style.display  = name === 'new'  ? 'block' : 'none';
+    document.querySelectorAll('.admin-topbar-nav .admin-topbar-btn').forEach(el => el.classList.remove('active'));
+    const active = document.querySelector(`.admin-topbar-nav [onclick*="showSection('${name}')"]`);
+    if (active) active.classList.add('active');
+  }
+
+  function toggleLogoutMenu() {
+    document.getElementById('logout-menu').classList.toggle('open');
+  }
+  document.addEventListener('click', function(e) {
+    if (!document.getElementById('avatar-wrap').contains(e.target)) {
+      document.getElementById('logout-menu').classList.remove('open');
+    }
+  });
+
+  // ── Star picker ──
+  document.querySelectorAll('#star-picker label').forEach((label, idx) => {
+    label.addEventListener('mouseenter', () => {
+      document.querySelectorAll('#star-picker label').forEach((l, i) => l.classList.toggle('selected', i <= idx));
+    });
+  });
+  document.getElementById('star-picker').addEventListener('mouseleave', updateStarDisplay);
+
+  function updateStarDisplay() {
+    const checked = document.querySelector('input[name="rating"]:checked');
+    const val = checked ? parseInt(checked.value) : 0;
+    document.querySelectorAll('#star-picker label').forEach((l, i) => l.classList.toggle('selected', i < val));
+  }
+  document.querySelectorAll('input[name="rating"]').forEach(r => r.addEventListener('change', updateStarDisplay));
+
+  const subScoreLabels = {
+    movie:  ['劇情', '畫面', '音樂'],
+    series: ['劇情', '製作', '配樂'],
+    book:   ['文筆', '結構', '思想'],
+  };
+
+  function updateFormForType() {
+    const type = document.getElementById('f-content-type').value;
+    const isBook = type === 'book';
+    const isSeries = type === 'series';
+    document.getElementById('label-title').textContent = isBook ? '書名 *' : isSeries ? '影集標題 *' : '電影標題 *';
+    document.getElementById('f-title').placeholder = isBook ? '書籍名稱' : isSeries ? '影集中文名稱' : '電影中文片名';
+    document.getElementById('label-year').textContent = isBook ? '出版年份' : isSeries ? '首播年份' : '上映年份';
+    document.getElementById('label-director').textContent = isBook ? '作者' : isSeries ? '導演／主創' : '導演';
+    document.getElementById('f-director').placeholder = isBook ? '作者姓名' : '導演姓名';
+    const [l1, l2, l3] = subScoreLabels[type] || subScoreLabels.movie;
+    document.getElementById('label-plot').textContent   = `${l1}評分（選填）`;
+    document.getElementById('label-visual').textContent = `${l2}評分（選填）`;
+    document.getElementById('label-music').textContent  = `${l3}評分（選填）`;
+  }
+
+  function newArticle(type) {
+    clearForm();
+    document.getElementById('f-content-type').value = type;
+    updateFormForType();
+    document.getElementById('form-title').textContent =
+      type === 'book' ? '撰寫新書評' : type === 'series' ? '撰寫新影集評' : '撰寫新電影評';
+    showSection('new');
+  }
+
+  // ── List ──
+  async function loadList() {
+    const { data, error } = await db
+      .from('articles')
+      .select('id, title, genre, rating, has_spoiler, is_published, published_at')
+      .order('published_at', { ascending: false });
+
+    const el = document.getElementById('list-content');
+    if (error || !data) { el.innerHTML = '<div class="empty-state">載入失敗</div>'; return; }
+    if (!data.length) {
+      el.innerHTML = '<div class="empty-state">尚無文章，<a href="#" onclick="showSection(\'new\')">撰寫第一篇</a></div>';
+      return;
+    }
+    allListData = data;
+    renderList(data);
+  }
+
+  // ── Save ──
+  async function saveArticle() {
+    const id      = document.getElementById('edit-id').value;
+    const title   = document.getElementById('f-title').value.trim();
+    const content = document.getElementById('f-content').value.trim();
+    const msg     = document.getElementById('form-msg');
+    msg.className = 'msg';
+
+    if (!title || !content) {
+      msg.textContent = '請填寫電影標題與影評內文';
+      msg.className = 'msg error';
+      return;
+    }
+
+    const checked = document.querySelector('input[name="rating"]:checked');
+    const tags = document.getElementById('f-tags').value.split(',').map(t => t.trim()).filter(Boolean);
+    const plotVal   = parseInt(document.getElementById('f-plot').value)   || null;
+    const visualVal = parseInt(document.getElementById('f-visual').value) || null;
+    const musicVal  = parseInt(document.getElementById('f-music').value)  || null;
+
+    const payload = {
+      title,
+      content,
+      excerpt:      document.getElementById('f-excerpt').value.trim() || content.slice(0, 120),
+      movie_year:   parseInt(document.getElementById('f-year').value) || null,
+      director:     document.getElementById('f-director').value.trim() || null,
+      genre:        document.getElementById('f-genre').value || null,
+      tags,
+      rating:       checked ? parseInt(checked.value) : null,
+      score_plot:   plotVal,
+      score_visual: visualVal,
+      score_music:  musicVal,
+      has_spoiler:  document.getElementById('f-spoiler').value === 'true',
+      cover_image:    document.getElementById('f-cover').value.trim() || null,
+      cover_position: document.getElementById('f-cover-position').value || 'center center',
+      hero_overlay:   parseFloat(document.getElementById('f-overlay').value) / 100,
+      youtube_url:    document.getElementById('f-youtube').value.trim() || null,
+      is_published: document.getElementById('f-status').value === 'true',
+      content_type: document.getElementById('f-content-type').value,
+      published_at: document.getElementById('f-status').value === 'scheduled'
+        ? new Date(document.getElementById('f-scheduled-at').value).toISOString()
+        : new Date().toISOString(),
+    };
+
+    let error;
+    if (id) { ({ error } = await db.from('articles').update(payload).eq('id', id)); }
+    else    { ({ error } = await db.from('articles').insert(payload)); }
+
+    if (error) {
+      msg.textContent = '儲存失敗：' + error.message;
+      msg.className = 'msg error';
+    } else {
+      msg.textContent = id ? '已成功更新！' : '已成功發佈！';
+      msg.className = 'msg success';
+      setTimeout(() => { clearForm(); showSection('list'); loadList(); }, 1200);
+    }
+  }
+
+  // ── Edit ──
+  async function editArticle(id) {
+    const { data, error } = await db.from('articles').select('*').eq('id', id).single();
+    if (error || !data) return;
+
+    document.getElementById('edit-id').value    = data.id;
+    document.getElementById('f-title').value    = data.title || '';
+    document.getElementById('f-year').value     = data.movie_year || '';
+    document.getElementById('f-director').value = data.director || '';
+    document.getElementById('f-genre').value    = data.genre || '';
+    document.getElementById('f-tags').value     = (data.tags || []).join(', ');
+    document.getElementById('f-spoiler').value  = String(data.has_spoiler || false);
+    document.getElementById('f-youtube').value  = data.youtube_url || '';
+    // cover
+    document.getElementById('f-cover').value          = data.cover_image || '';
+    document.getElementById('f-cover-position').value = data.cover_position || 'center center';
+    const overlayPct = Math.round((data.hero_overlay ?? 0.82) * 100);
+    document.getElementById('f-overlay').value    = overlayPct;
+    document.getElementById('overlay-val').textContent = overlayPct + '%';
+    if (data.cover_image) showCoverPreview(data.cover_image, data.cover_position || 'center center');
+    document.getElementById('f-excerpt').value  = data.excerpt || '';
+    document.getElementById('f-content').value  = data.content || '';
+    document.getElementById('f-status').value        = String(data.is_published);
+    document.getElementById('f-content-type').value  = data.content_type || 'movie';
+    updateFormForType();
+
+    // sub scores
+    ['plot','visual','music'].forEach(k => {
+      const val = data[`score_${k}`] || 0;
+      document.getElementById(`f-${k}`).value = val;
+      document.getElementById(`${k}-val`).textContent = val || '—';
+    });
+
+    if (data.rating) {
+      const r = document.getElementById(`r${data.rating}`);
+      if (r) { r.checked = true; updateStarDisplay(); }
+    }
+
+    const typeNames = { movie: '電影', series: '影集', book: '書本' };
+    document.getElementById('form-title').textContent = `編輯${typeNames[data.content_type||'movie']||''}評`;
+    document.getElementById('form-msg').className = 'msg';
+    showSection('new');
+  }
+
+  // ── Delete ──
+  async function deleteArticle(id, btn) {
+    if (!confirm('確定要刪除這篇影評？此操作無法復原。')) return;
+    btn.textContent = '刪除中…';
+    const { error } = await db.from('articles').delete().eq('id', id);
+    if (error) { alert('刪除失敗：' + error.message); btn.textContent = '刪除'; }
+    else loadList();
+  }
+
+  function clearForm() {
+    ['edit-id','f-title','f-year','f-director','f-tags','f-cover','f-youtube','f-excerpt','f-content'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    document.getElementById('f-cover-position').value = 'center center';
+    document.getElementById('f-overlay').value = 82;
+    document.getElementById('overlay-val').textContent = '82%';
+    const preview = document.getElementById('cover-preview');
+    preview.style.backgroundImage = '';
+    preview.classList.remove('has-image');
+    preview.querySelector('.cover-placeholder').style.display = '';
+    preview.onclick = null;
+    document.getElementById('focal-dot').style.display = 'none';
+    document.getElementById('cover-hint').style.display = 'none';
+    document.getElementById('cover-upload-status').textContent = '';
+    document.getElementById('f-genre').value        = '';
+    document.getElementById('f-status').value       = 'true';
+    document.getElementById('f-spoiler').value      = 'false';
+    document.getElementById('f-content-type').value = 'movie';
+    updateFormForType();
+    ['plot','visual','music'].forEach(k => {
+      document.getElementById(`f-${k}`).value = 0;
+      document.getElementById(`${k}-val`).textContent = '—';
+    });
+    document.querySelectorAll('input[name="rating"]').forEach(r => r.checked = false);
+    updateStarDisplay();
+    document.getElementById('form-title').textContent = '撰寫新影評';
+  }
+
+  document.getElementById('login-password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+
+  // ── 列表分頁 ──
+  let allListData = [];
+  let listTab = 'all';
+  function setListTab(tab) {
+    listTab = tab;
+    ['all','movie','series','book','published','draft'].forEach(t => {
+      const el = document.getElementById('tab-' + t);
+      if (el) el.classList.toggle('active', t === tab);
+    });
+    renderList(allListData);
+  }
+
+  function renderList(data) {
+    const q = (document.getElementById('list-search')?.value || '').toLowerCase();
+    let filtered = data;
+    if (listTab === 'published') filtered = filtered.filter(a => a.is_published);
+    else if (listTab === 'draft') filtered = filtered.filter(a => !a.is_published);
+    else if (['movie','series','book'].includes(listTab)) filtered = filtered.filter(a => (a.content_type || 'movie') === listTab);
+    if (q) filtered = filtered.filter(a => (a.title || '').toLowerCase().includes(q));
+
+    const el = document.getElementById('list-content');
+    if (!filtered.length) {
+      el.innerHTML = '<div class="empty-state">沒有符合的文章</div>'; return;
+    }
+    const typeLabel = { movie: '電影', series: '影集', book: '書本' };
+    el.innerHTML = `
+      <table class="article-table">
+        <thead><tr><th>標題</th><th>分類</th><th>評分</th><th>防雷</th><th>狀態</th><th>日期</th><th></th></tr></thead>
+        <tbody>
+          ${filtered.map(a => `
+            <tr>
+              <td><strong>${a.title}</strong></td>
+              <td><span style="font-size:0.75rem;color:#888;">${typeLabel[a.content_type||'movie']||'—'}</span>${a.genre ? ` · ${a.genre}` : ''}</td>
+              <td>${'★'.repeat(a.rating || 0)}</td>
+              <td>${a.has_spoiler ? '<span style="color:#c0392b;">⚠ 有雷</span>' : '<span style="color:#27ae60;">✓ 無雷</span>'}</td>
+              <td>
+                <button class="btn" style="padding:4px 10px;font-size:0.72rem;${a.is_published ? 'border-color:#27ae60;color:#27ae60;' : 'color:#888;'}"
+                  onclick="togglePublish('${a.id}', ${a.is_published}, this)">
+                  ${a.is_published ? '✓ 已發佈' : '草稿'}
+                </button>
+              </td>
+              <td>${new Date(a.published_at).toLocaleDateString('zh-TW')}</td>
+              <td style="display:flex;gap:8px;">
+                <button class="btn" style="padding:6px 14px;font-size:0.75rem;" onclick="editArticle('${a.id}')">編輯</button>
+                <button class="btn" style="padding:6px 14px;font-size:0.75rem;border-color:#e55;color:#e55;" onclick="deleteArticle('${a.id}', this)">刪除</button>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  async function togglePublish(id, current, btn) {
+    btn.textContent = '…';
+    const { error } = await db.from('articles').update({ is_published: !current }).eq('id', id);
+    if (error) { btn.textContent = '失敗'; return; }
+    const row = allListData.find(a => a.id === id);
+    if (row) row.is_published = !current;
+    renderList(allListData);
+  }
+
+  // ── 預約發佈 ──
+  function toggleSchedule() {
+    const v = document.getElementById('f-status').value;
+    document.getElementById('schedule-group').style.display = v === 'scheduled' ? '' : 'none';
+  }
+
+  function switchTab(tab) {
+    const isPreview = tab === 'preview';
+    document.getElementById('f-content').style.display = isPreview ? 'none' : '';
+    document.getElementById('content-preview').style.display = isPreview ? '' : 'none';
+    document.getElementById('tab-write').classList.toggle('active', !isPreview);
+    document.getElementById('tab-preview').classList.toggle('active', isPreview);
+    if (isPreview) renderPreview();
+  }
+
+  // ── Storage 上傳 ──
+  async function uploadToStorage(file, folder) {
+    const ext = file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g,'') || 'jpg';
+    const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2,7)}.${ext}`;
+    const { error } = await db.storage.from('images').upload(path, file, { cacheControl:'3600', upsert:false });
+    if (error) throw error;
+    const { data: { publicUrl } } = db.storage.from('images').getPublicUrl(path);
+    return publicUrl;
+  }
+
+  async function handleCoverUpload(input) {
+    const file = input.files[0]; if (!file) return;
+    const status = document.getElementById('cover-upload-status');
+    status.textContent = '上傳中…';
+    try {
+      const url = await uploadToStorage(file, 'covers');
+      document.getElementById('f-cover').value = url;
+      showCoverPreview(url, 'center center');
+      status.textContent = '✓ 成功';
+    } catch(e) { status.textContent = '✗ ' + e.message; }
+    input.value = '';
+  }
+
+  function showCoverPreview(url, pos) {
+    const preview = document.getElementById('cover-preview');
+    pos = pos || 'center center';
+    preview.style.backgroundImage = `url('${url}')`;
+    preview.style.backgroundPosition = pos;
+    preview.classList.add('has-image');
+    preview.querySelector('.cover-placeholder').style.display = 'none';
+    document.getElementById('cover-hint').style.display = '';
+    // set focal dot
+    const dot = document.getElementById('focal-dot');
+    const parts = pos.match(/([\d.]+)%\s+([\d.]+)%/);
+    if (parts) { dot.style.left = parts[1]+'%'; dot.style.top = parts[2]+'%'; dot.style.display = 'block'; }
+    else { dot.style.left = '50%'; dot.style.top = '50%'; dot.style.display = 'block'; }
+    // click to set focal point
+    preview.onclick = function(e) {
+      const r = preview.getBoundingClientRect();
+      const x = Math.round((e.clientX - r.left) / r.width * 100);
+      const y = Math.round((e.clientY - r.top) / r.height * 100);
+      const p = `${x}% ${y}%`;
+      document.getElementById('f-cover-position').value = p;
+      preview.style.backgroundPosition = p;
+      dot.style.left = x+'%'; dot.style.top = y+'%';
+    };
+  }
+
+  async function handleContentUpload(input) {
+    const file = input.files[0]; if (!file) return;
+    const ta = document.getElementById('f-content');
+    const start = ta.selectionStart;
+    const marker = '\n\n!![上傳中…](...)\n\n';
+    ta.setRangeText(marker, start, start, 'end');
+    try {
+      const url = await uploadToStorage(file, 'content');
+      const alt = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g,' ');
+      ta.value = ta.value.replace('!![上傳中…](...)', `!![${alt}](${url})`);
+    } catch(e) {
+      ta.value = ta.value.replace(marker, '');
+      alert('上傳失敗：' + e.message);
+    }
+    input.value = '';
+    if (document.getElementById('tab-preview').classList.contains('active')) renderPreview();
+  }
+
+  function triggerContentUpload() {
+    document.getElementById('content-img-file').click();
+  }
+
+  function insertSnippet(type) {
+    const ta = document.getElementById('f-content');
+    const start = ta.selectionStart;
+    const end   = ta.selectionEnd;
+    const sel   = ta.value.slice(start, end);
+    const snippets = {
+      bold:    { before: '**', after: '**', placeholder: '粗體文字' },
+      italic:  { before: '*',  after: '*',  placeholder: '斜體文字' },
+      quote:   { before: '\n\n>> ', after: '\n\n', placeholder: '輸入引言內容' },
+      img:     { before: '![', after: '](https://)', placeholder: '圖片說明' },
+      imgwide: { before: '!![', after: '](https://)', placeholder: '圖片說明' },
+    };
+    const s = snippets[type];
+    const inner = sel || s.placeholder;
+    const insert = s.before + inner + s.after;
+    ta.setRangeText(insert, start, end, 'select');
+    // 選取 placeholder 部分方便直接輸入
+    const newStart = start + s.before.length;
+    const newEnd   = newStart + inner.length;
+    ta.setSelectionRange(newStart, newEnd);
+    ta.focus();
+    if (document.getElementById('tab-preview').classList.contains('active')) renderPreview();
+  }
+
+  function renderPreview() {
+    const text = document.getElementById('f-content').value;
+    document.getElementById('content-preview').innerHTML = text
+      ? contentToHTML(text)
+      : '<p style="color:#aaa;">尚未輸入內容…</p>';
+  }
+
+  checkSession();
+</script>
+</body>
+</html>
