@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>主題片單 — 爆米花 Popcorn</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600&family=Noto+Serif+TC:wght@700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=3">
+</head>
+<body>
+
+  <nav>
+    <div class="nav-inner">
+      <a class="nav-logo" href="index.html">爆米花 Popcorn</a>
+      <div class="nav-right">
+        <ul class="nav-links">
+          <li><a href="reviews.html">電影</a></li>
+          <li><a href="reviews.html?type=series">影集</a></li>
+          <li><a href="books.html">書本</a></li>
+          <li><a href="playlists.html" class="active">主題片單</a></li>
+        </ul>
+        <div class="nav-search-wrap">
+          <button class="nav-search-btn" onclick="this.closest('.nav-search-wrap').classList.toggle('open')" aria-label="搜尋">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          </button>
+          <input class="nav-search-input" type="search" placeholder="搜尋影片名稱…" onkeydown="if(event.key==='Enter'&&this.value)location.href='reviews.html?q='+encodeURIComponent(this.value)">
+        <button class="nav-hamburger" onclick="document.querySelector('nav').classList.toggle('nav-open')" aria-label="選單"><span></span><span></span><span></span></button>
+        </div>
+      </div>
+    </div>
+  </nav>
+  <div class="nav-mobile-menu">
+    <a href="reviews.html">電影</a>
+    <a href="reviews.html?type=series">影集</a>
+    <a href="books.html">書本</a>
+    <a href="playlists.html">主題片單</a>
+  </div>
+
+  <div class="container" style="padding-top:48px;" id="page-root">
+    <div class="loading">載入中…</div>
+  </div>
+
+  <footer>
+    <p>爆米花 Popcorn &copy; <span id="year"></span></p>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
+  <script src="utils.js?v=4"></script>
+  <script src="shared.js"></script>
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    async function loadPlaylist() {
+      const id = new URLSearchParams(location.search).get('id');
+      const root = document.getElementById('page-root');
+      if (!id) { root.innerHTML = '<div class="empty-state">找不到片單</div>'; return; }
+
+      const { data: pl, error: plErr } = await db
+        .from('playlists').select('*').eq('id', id).single();
+      if (plErr || !pl) { root.innerHTML = '<div class="empty-state">片單不存在</div>'; return; }
+
+      document.title = `${pl.name} — 爆米花 Popcorn`;
+
+      const { data: articles } = await db
+        .from('articles')
+        .select('*')
+        .eq('playlist_id', id)
+        .eq('is_published', true)
+        .order('published_at', { ascending: false });
+
+      root.innerHTML = `
+        <a href="playlists.html" style="font-size:0.85rem;color:var(--gray);text-decoration:none;">← 所有片單</a>
+        <div class="section-label" style="margin-top:20px;">${pl.name}</div>
+        ${pl.description ? `<p style="color:var(--gray);margin-bottom:32px;">${pl.description}</p>` : ''}
+        <div class="card-grid" id="articles-grid"></div>
+      `;
+
+      const grid = document.getElementById('articles-grid');
+      if (!articles || !articles.length) {
+        grid.innerHTML = '<div class="empty-state">此片單尚無文章</div>';
+      } else {
+        grid.innerHTML = articles.map(a => cardHTML(a)).join('');
+      }
+    }
+
+    loadPlaylist();
+  </script>
+</body>
+</html>
