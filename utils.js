@@ -62,7 +62,7 @@ function contentToHTML(text) {
   const imgWideRegex = /^!!\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)$/;
   const imgRegex     = /^!\[([^\]]*)\]\((https?:\/\/[^\s\)]+)\)$/;
 
-  return text.replace(/\r\n/g, '\n').split(/\n\n+/).map(p => {
+  return text.replace(/\r\n/g, '\n').split(/\n/).map(p => {
     const trimmed = p.trim();
     if (!trimmed) return '';
 
@@ -89,8 +89,7 @@ function contentToHTML(text) {
       return `<div class="yt-wrap"><iframe src="https://www.youtube.com/embed/${ytMatch[2]}" title="影片" frameborder="0" allowfullscreen loading="lazy"></iframe></div>`;
     }
 
-    let html = p
-      .replace(/\n/g, '<br>')
+    let html = trimmed
       .replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
       .replace(/(^|[\s\(])(https?:\/\/[^\s<"'\)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
